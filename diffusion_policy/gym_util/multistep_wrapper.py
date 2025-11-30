@@ -19,10 +19,12 @@ def repeated_space(space, n):
     if isinstance(space, spaces.Box):
         return repeated_box(space, n)
     elif isinstance(space, spaces.Dict):
-        result_space = spaces.Dict()
-        for key, value in space.items():
-            result_space[key] = repeated_space(value, n)
-        return result_space
+        # Create Dict space with dictionary of repeated spaces
+        # Use .spaces.items() to get the actual Space objects, not .items() which might return tuples
+        result_dict = {}
+        for key, value in space.spaces.items():
+            result_dict[key] = repeated_space(value, n)
+        return spaces.Dict(result_dict)
     else:
         raise RuntimeError(f'Unsupported space type {type(space)}')
 

@@ -186,7 +186,7 @@ class AsyncVectorEnv(VectorEnv):
         _, successes = zip(*[pipe.recv() for pipe in self.parent_pipes])
         self._raise_if_errors(successes)
 
-    def reset_async(self):
+    def reset_async(self, seed=None, options=None):
         self._assert_is_running()
         if self._state != AsyncState.DEFAULT:
             raise AlreadyPendingCallError(
@@ -199,13 +199,17 @@ class AsyncVectorEnv(VectorEnv):
             pipe.send(("reset", None))
         self._state = AsyncState.WAITING_RESET
 
-    def reset_wait(self, timeout=None):
+    def reset_wait(self, timeout=None, seed=None, options=None):
         """
         Parameters
         ----------
         timeout : int or float, optional
             Number of seconds before the call to `reset_wait` times out. If
             `None`, the call to `reset_wait` never times out.
+        seed : optional
+            Ignored for compatibility with gym API. Seeds should be set via seed() method.
+        options : optional
+            Ignored for compatibility with gym API.
         Returns
         -------
         observations : sample from `observation_space`
@@ -231,7 +235,7 @@ class AsyncVectorEnv(VectorEnv):
 
         if not self.shared_memory:
             self.observations = concatenate(
-                results, self.observations, self.single_observation_space
+                self.single_observation_space, results, self.observations
             )
 
         return deepcopy(self.observations) if self.copy else self.observations
@@ -294,7 +298,7 @@ class AsyncVectorEnv(VectorEnv):
 
         if not self.shared_memory:
             self.observations = concatenate(
-                observations_list, self.observations, self.single_observation_space
+                self.single_observation_space, observations_list, self.observations
             )
 
         return (

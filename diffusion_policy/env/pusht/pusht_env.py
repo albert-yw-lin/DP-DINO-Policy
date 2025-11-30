@@ -12,6 +12,9 @@ import cv2
 import skimage.transform as st
 from diffusion_policy.env.pusht.pymunk_override import DrawOptions
 
+# Store reference to pymunk.Space class to avoid any potential import issues
+_PYMUNK_SPACE = pymunk.Space
+
 
 def pymunk_to_shapely(body, shapes):
     geoms = list()
@@ -286,7 +289,21 @@ class PushTEnv(gym.Env):
         return new_state
 
     def _setup(self):
-        self.space = pymunk.Space()
+        # Use module-level reference to pymunk.Space to avoid any import issues
+        # Create the space instance
+        try:
+            self.space = _PYMUNK_SPACE()
+        except Exception as e:
+            raise RuntimeError(f"Failed to create pymunk.Space(): {e}, type: {type(_PYMUNK_SPACE)}")
+        
+        # Verify it's actually a pymunk Space instance
+        if not isinstance(self.space, _PYMUNK_SPACE):
+            raise RuntimeError(
+                f"self.space is not a pymunk.Space instance. "
+                f"Got type: {type(self.space)}, "
+                f"_PYMUNK_SPACE type: {type(_PYMUNK_SPACE)}"
+            )
+        
         self.space.gravity = 0, 0
         self.space.damping = 0
         self.teleop = False
@@ -307,9 +324,24 @@ class PushTEnv(gym.Env):
         self.goal_color = pygame.Color('LightGreen')
         self.goal_pose = np.array([256,256,np.pi/4])  # x, y, theta (in radians)
 
-        # Add collision handling
-        self.collision_handeler = self.space.add_collision_handler(0, 0)
-        self.collision_handeler.post_solve = self._handle_collision
+        # Add collision handling - pymunk 7.0+ uses on_collision instead of add_collision_handler
+        # Check which API is available and use the appropriate one
+        if hasattr(self.space, 'on_collision'):
+            # New API (pymunk 7.0+) - on_collision takes callback functions as keyword arguments
+            # Use a closure to capture self for the callback
+            env_self = self
+            def handle_collision(arbiter, space, data):
+                env_self.n_contact_points += len(arbiter.contact_point_set.points)
+            self.space.on_collision(0, 0, post_solve=handle_collision)
+        elif hasattr(self.space, 'add_collision_handler'):
+            # Old API (pymunk < 7.0)
+            self.collision_handeler = self.space.add_collision_handler(0, 0)
+            self.collision_handeler.post_solve = self._handle_collision
+        else:
+            raise RuntimeError(
+                f"Neither on_collision nor add_collision_handler found on space. "
+                f"Available methods: {[x for x in dir(self.space) if 'collision' in x.lower()]}"
+            )
         self.n_contact_points = 0
 
         self.max_score = 50 * 100
