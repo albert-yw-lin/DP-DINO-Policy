@@ -1,0 +1,54 @@
+pip uninstall robomimic -y
+
+pip install robomimic==0.2.0 --no-deps
+
+mamba install -c pytorch3d pytorch3d=0.7.9 -y
+
+# Completely remove torch and torchvision
+pip uninstall torch torchvision torchaudio -y
+
+# Clear pip cache
+pip cache purge
+
+# Reinstall PyTorch with CUDA 12.4
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+
+# Add miss function for robosuite 1.4.0
+cat >> /home/wpai/robosuite/robosuite/utils/mjcf_utils.py << 'EOF'
+def postprocess_model_xml(xml_str):
+    """
+    Postprocess model XML string.
+    This function was removed in robosuite 1.3+ but is still used by robomimic 0.2.0.
+    Added back for compatibility.
+    
+    Args:
+        xml_str (str): Mujoco XML string
+        
+    Returns:
+        str: Postprocessed XML string (currently just returns input unchanged)
+    """
+    return xml_str
+EOF
+
+# if can't install egl_probe
+cat > /home/wpai/miniforge3/envs/dp-dino/lib/python3.10/site-packages/egl_probe.py << 'EOF'
+"""
+Stub for egl_probe to bypass EGL device probing.
+This allows robomimic environments to work without EGL rendering support.
+"""
+
+def get_available_devices():
+    """Return a default device list."""
+    return [0]
+
+def probe_device(device_id=0):
+    """Return default device info."""
+    return {'device_id': device_id, 'name': 'CPU'}
+
+def get_best_device():
+    """Return the default device."""
+    return 0
+
+# Set module-level variables that might be accessed
+DEVICES = [0]
+EOF

@@ -273,7 +273,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
         episode_ends = list()
         prev_end = 0
         for i in range(len(demos)):
-            demo = demos[f'demo_{i}']
+            demo = demos[f'demo_{i+1}']
             episode_length = demo['actions'].shape[0]
             episode_end = prev_end + episode_length
             prev_end = episode_end
@@ -290,7 +290,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                 data_key = 'actions'
             this_data = list()
             for i in range(len(demos)):
-                demo = demos[f'demo_{i}']
+                demo = demos[f'demo_{i+1}']
                 this_data.append(demo[data_key][:].astype(np.float32))
             this_data = np.concatenate(this_data, axis=0)
             if key == 'action':
@@ -337,7 +337,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                         dtype=np.uint8
                     )
                     for episode_idx in range(len(demos)):
-                        demo = demos[f'demo_{episode_idx}']
+                        demo = demos[f'demo_{episode_idx+1}']
                         hdf5_arr = demo['obs'][key]
                         for hdf5_idx in range(hdf5_arr.shape[0]):
                             if len(futures) >= max_inflight_tasks:

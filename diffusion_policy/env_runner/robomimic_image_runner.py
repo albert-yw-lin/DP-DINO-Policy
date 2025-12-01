@@ -1,4 +1,8 @@
 import os
+# Force use of OSMesa (CPU-based software renderer) instead of EGL
+# MUST be set before importing robosuite/robomimic to prevent EGL context errors
+# os.environ['MUJOCO_GL'] = 'osmesa'
+
 import wandb
 import numpy as np
 import torch
@@ -25,6 +29,7 @@ import robomimic.utils.obs_utils as ObsUtils
 
 
 def create_env(env_meta, shape_meta, enable_render=True):
+    
     modality_mapping = collections.defaultdict(list)
     for key, attr in shape_meta['obs'].items():
         modality_mapping[attr.get('type', 'low_dim')].append(key)
@@ -161,9 +166,10 @@ class RobomimicImageRunner(BaseImageRunner):
         # train
         with h5py.File(dataset_path, 'r') as f:
             for i in range(n_train):
-                train_idx = train_start_idx + i
+                train_idx = train_start_idx + i + 1
                 enable_render = i < n_train_vis
-                init_state = f[f'data/demo_{train_idx}/states'][0]
+                # Convert h5py dataset to numpy array for pickling
+                init_state = np.array(f[f'data/demo_{train_idx}/states'][0])
 
                 def init_fn(env, init_state=init_state, 
                     enable_render=enable_render):
@@ -215,7 +221,7 @@ class RobomimicImageRunner(BaseImageRunner):
             env_prefixs.append('test/')
             env_init_fn_dills.append(dill.dumps(init_fn))
 
-        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
+        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn, shared_memory=False)
         # env = SyncVectorEnv(env_fns)
 
 
