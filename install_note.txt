@@ -14,7 +14,7 @@ pip cache purge
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
 # Add miss function for robosuite 1.4.0
-cat >> /home/wpai/robosuite/robosuite/utils/mjcf_utils.py << 'EOF'
+cat >> ~/ywlin/robosuite/robosuite/utils/mjcf_utils.py << 'EOF'
 def postprocess_model_xml(xml_str):
     """
     Postprocess model XML string.
