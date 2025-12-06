@@ -153,7 +153,17 @@ class TrainDiffusionUnetImageWorkspaceDINO(BaseWorkspace):
             for local_epoch_idx in range(cfg.training.num_epochs):
                 step_log = dict()
                 # ========= train for this epoch ==========
-                if cfg.training.freeze_encoder:
+                # Check if we should freeze encoder based on epoch number
+                freeze_encoder_epochs = cfg.training.get('freeze_encoder_epochs', None)
+                should_freeze = False
+                if freeze_encoder_epochs is not None and freeze_encoder_epochs > 0:
+                    # Freeze for first n epochs, then unfreeze
+                    should_freeze = (self.epoch < freeze_encoder_epochs)
+                else:
+                    # Fall back to boolean flag for backward compatibility
+                    should_freeze = cfg.training.freeze_encoder
+                
+                if should_freeze:
                     self.model.obs_encoder.eval()
                     self.model.obs_encoder.requires_grad_(False)
                 else:
