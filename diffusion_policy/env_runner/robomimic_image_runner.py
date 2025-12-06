@@ -1,7 +1,7 @@
 import os
-# Force use of OSMesa (CPU-based software renderer) instead of EGL
-# MUST be set before importing robosuite/robomimic to prevent EGL context errors
-# os.environ['MUJOCO_GL'] = 'osmesa'
+# Force use of OSMesa (CPU-based software renderer) for stable multiprocessing
+# MUST be set before importing robosuite/robomimic
+os.environ['MUJOCO_GL'] = 'egl'
 
 import wandb
 import numpy as np
@@ -59,7 +59,7 @@ class RobomimicImageRunner(BaseImageRunner):
             n_test=22,
             n_test_vis=6,
             test_start_seed=10000,
-            max_steps=400,
+            max_steps=600,
             n_obs_steps=2,
             n_action_steps=8,
             render_obs_key='agentview_image',
@@ -68,12 +68,19 @@ class RobomimicImageRunner(BaseImageRunner):
             past_action=False,
             abs_action=False,
             tqdm_interval_sec=5.0,
-            n_envs=None
+            n_envs=None,
+            env_name_override=None
         ):
         super().__init__(output_dir)
 
         if n_envs is None:
             n_envs = n_train + n_test
+            # Cap n_envs to avoid resource exhaustion with large n_train/n_test
+            # Evaluations will run in batches (chunks) automatically
+            max_parallel_envs = 10
+            if n_envs > max_parallel_envs:
+                print(f"Capping parallel environments from {n_envs} to {max_parallel_envs} (will run in {math.ceil(n_envs / max_parallel_envs)} batches)")
+                n_envs = max_parallel_envs
 
         # assert n_obs_steps <= n_action_steps
         dataset_path = os.path.expanduser(dataset_path)
@@ -85,6 +92,11 @@ class RobomimicImageRunner(BaseImageRunner):
             dataset_path)
         # disable object state observation
         env_meta['env_kwargs']['use_object_obs'] = False
+        
+        # Override environment name if specified
+        if env_name_override is not None:
+            print(f"Overriding environment from '{env_meta['env_name']}' to '{env_name_override}'")
+            env_meta['env_name'] = env_name_override
 
         rotation_transformer = None
         if abs_action:
@@ -165,8 +177,17 @@ class RobomimicImageRunner(BaseImageRunner):
 
         # train
         with h5py.File(dataset_path, 'r') as f:
+            # Count number of demos in the dataset
+            num_demos = len([key for key in f['data'].keys() if key.startswith('demo_')])
+            print(f"Found {num_demos} demos in dataset. Requested n_train={n_train}")
+            
+            if n_train > num_demos:
+                print(f"n_train ({n_train}) > num_demos ({num_demos}), will cycle through demos")
+            
             for i in range(n_train):
-                train_idx = train_start_idx + i + 1
+                # Cycle through available demos using modulo
+                demo_offset = i % num_demos
+                train_idx = train_start_idx + demo_offset + 1
                 enable_render = i < n_train_vis
                 # Convert h5py dataset to numpy array for pickling
                 init_state = np.array(f[f'data/demo_{train_idx}/states'][0])
@@ -189,7 +210,10 @@ class RobomimicImageRunner(BaseImageRunner):
                     assert isinstance(env.env.env, RobomimicImageWrapper)
                     env.env.env.init_state = init_state
 
-                env_seeds.append(train_idx)
+                # Use unique seed for each episode (even if cycling through demos)
+                # Use large offset to avoid conflict with test seeds (which start at test_start_seed, default 10000)
+                unique_seed = 100000 + i
+                env_seeds.append(unique_seed)
                 env_prefixs.append('train/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
         
@@ -253,7 +277,8 @@ class RobomimicImageRunner(BaseImageRunner):
 
         # allocate data
         all_video_paths = [None] * n_inits
-        all_rewards = [None] * n_inits
+        # all_rewards = [None] * n_inits  # Disabled: not tracking rewards
+        all_successes = [None] * n_inits  # Track success from _check_success()
 
         for chunk_idx in range(n_chunks):
             start = chunk_idx * n_envs
@@ -323,12 +348,15 @@ class RobomimicImageRunner(BaseImageRunner):
 
             # collect data for this round
             all_video_paths[this_global_slice] = env.render()[this_local_slice]
-            all_rewards[this_global_slice] = env.call('get_attr', 'reward')[this_local_slice]
+            # all_rewards[this_global_slice] = env.call('get_attr', 'reward')[this_local_slice]  # Disabled: not tracking rewards
+            # Get success status by calling check_success on each environment
+            all_successes[this_global_slice] = env.call_each('check_success')[this_local_slice]
         # clear out video buffer
         _ = env.reset()
         
         # log
-        max_rewards = collections.defaultdict(list)
+        # max_rewards = collections.defaultdict(list)  # Disabled: not tracking rewards
+        successes = collections.defaultdict(list)
         log_data = dict()
         # results reported in the paper are generated using the commented out line below
         # which will only report and average metrics from first n_envs initial condition and seeds
@@ -341,9 +369,12 @@ class RobomimicImageRunner(BaseImageRunner):
         for i in range(n_inits):
             seed = self.env_seeds[i]
             prefix = self.env_prefixs[i]
-            max_reward = np.max(all_rewards[i])
-            max_rewards[prefix].append(max_reward)
-            log_data[prefix+f'sim_max_reward_{seed}'] = max_reward
+            # max_reward = np.max(all_rewards[i])  # Disabled: not tracking rewards
+            success = float(all_successes[i]) if all_successes[i] is not None else 0.0  # Convert bool to float (1.0 or 0.0)
+            # max_rewards[prefix].append(max_reward)  # Disabled: not tracking rewards
+            successes[prefix].append(success)
+            # log_data[prefix+f'sim_max_reward_{seed}'] = max_reward  # Disabled: not tracking rewards
+            log_data[prefix+f'sim_success_{seed}'] = success
 
             # visualize sim
             video_path = all_video_paths[i]
@@ -352,8 +383,15 @@ class RobomimicImageRunner(BaseImageRunner):
                 log_data[prefix+f'sim_video_{seed}'] = sim_video
         
         # log aggregate metrics
-        for prefix, value in max_rewards.items():
-            name = prefix+'mean_score'
+        # Disabled: not tracking rewards
+        # for prefix, value in max_rewards.items():
+        #     name = prefix+'mean_score'
+        #     value = np.mean(value)
+        #     log_data[name] = value
+        
+        # log success rate (primary metric)
+        for prefix, value in successes.items():
+            name = prefix+'success_rate'
             value = np.mean(value)
             log_data[name] = value
 

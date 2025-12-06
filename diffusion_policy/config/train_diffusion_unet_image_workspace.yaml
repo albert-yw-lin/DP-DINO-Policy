@@ -72,14 +72,14 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 64
+  batch_size: 16
   num_workers: 4
   shuffle: True
   pin_memory: True
   persistent_workers: False
 
 val_dataloader:
-  batch_size: 64
+  batch_size: 16
   num_workers: 4
   shuffle: False
   pin_memory: True
@@ -100,7 +100,7 @@ training:
   # optimization
   lr_scheduler: cosine
   lr_warmup_steps: 500
-  num_epochs: 8000
+  num_epochs: 300
   gradient_accumulate_every: 1
   # EMA destroys performance when used with BatchNorm
   # replace BatchNorm with GroupNorm.
@@ -119,7 +119,7 @@ training:
   tqdm_interval_sec: 1.0
 
 logging:
-  project: diffusion_policy_debug
+  project: diffusion_policy_mug_2_3_4_5_80
   resume: True
   mode: online
   name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}

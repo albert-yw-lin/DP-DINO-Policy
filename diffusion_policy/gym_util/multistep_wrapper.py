@@ -78,11 +78,13 @@ class MultiStepWrapper(gym.Wrapper):
         self._action_space = repeated_space(env.action_space, n_action_steps)
         self._observation_space = repeated_space(env.observation_space, n_obs_steps)
         self.max_episode_steps = max_episode_steps
+        print(f"max_episode_steps: {self.max_episode_steps}")
         self.n_obs_steps = n_obs_steps
         self.n_action_steps = n_action_steps
         self.reward_agg_method = reward_agg_method
         self.n_obs_steps = n_obs_steps
-
+        self.step_count = 0
+        self.task_completion_hold_count = -1
         self.obs = deque(maxlen=n_obs_steps+1)
         self.reward = list()
         self.done = list()
@@ -91,12 +93,12 @@ class MultiStepWrapper(gym.Wrapper):
     def reset(self):
         """Resets the environment using kwargs."""
         obs = super().reset()
-
+        self.step_count = 0
         self.obs = deque([obs], maxlen=self.n_obs_steps+1)
         self.reward = list()
         self.done = list()
         self.info = defaultdict(lambda : deque(maxlen=self.n_obs_steps+1))
-
+        self.task_completion_hold_count = -1
         obs = self._get_obs(self.n_obs_steps)
         return obs
 
@@ -109,13 +111,26 @@ class MultiStepWrapper(gym.Wrapper):
                 # termination
                 break
             observation, reward, done, info = super().step(act)
-
+            self.step_count += 1
             self.obs.append(observation)
             self.reward.append(reward)
-            if (self.max_episode_steps is not None) \
-                and (len(self.reward) >= self.max_episode_steps):
-                # truncation
+            # if (self.max_episode_steps is not None) \
+            #     and (len(self.reward) >= self.max_episode_steps):
+            # Also break if we complete the task
+            if self.task_completion_hold_count == 0 or self.step_count >= self.max_episode_steps:
                 done = True
+                
+
+            # state machine to check for having a success for 10 consecutive timesteps
+            if self.check_success():
+                if self.task_completion_hold_count > 0:
+                    self.task_completion_hold_count -= 1  # latched state, decrement count
+                else:
+                    self.task_completion_hold_count = 10  # reset count on first success timestep
+            else:
+                self.task_completion_hold_count = -1  # null the counter if there's no success
+                # truncation
+                
             self.done.append(done)
             self._add_info(info)
 
@@ -162,3 +177,7 @@ class MultiStepWrapper(gym.Wrapper):
         for k, v in self.info.items():
             result[k] = list(v)
         return result
+    
+    def check_success(self):
+        """Forward check_success to the underlying environment."""
+        return self.env.check_success()

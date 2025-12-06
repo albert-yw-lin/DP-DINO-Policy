@@ -49,3 +49,7 @@ class VideoRecordingWrapper(gym.Wrapper):
         if self.video_recoder.is_ready():
             self.video_recoder.stop()
         return self.file_path
+    
+    def check_success(self):
+        """Forward check_success to the underlying environment."""
+        return self.env.check_success()

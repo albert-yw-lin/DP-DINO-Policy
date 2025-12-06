@@ -116,7 +116,20 @@ class RobomimicImageWrapper(gym.Env):
         img = np.moveaxis(self.render_cache, 0, -1)
         img = (img * 255).astype(np.uint8)
         return img
-
+    
+    def check_success(self):
+        """Forward check_success to the underlying environment."""
+        # Unwrap to get to the base robosuite environment
+        env = self.env
+        while hasattr(env, 'env'):
+            env = env.env
+        # Call _check_success on the robosuite environment
+        if hasattr(env, 'check_success'):
+            return env.check_success()
+        else:
+            # Fallback: assume not successful if method doesn't exist
+            raise RuntimeError('check_success method not found in underlying environment')
+    
 
 def test():
     import os
